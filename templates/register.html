@@ -1,19 +1,19 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Login</title>
+    <title>Register</title>
 </head>
 <body>
 
-<h2>Login</h2>
+<h2>Register</h2>
 
-<form action="{{ url_for('login') }}" method="POST">
+<form action="{{ url_for('register') }}" method="POST">
     <input type="text" name="username" placeholder="Username" required><br><br>
     <input type="password" name="password" placeholder="Password" required><br><br>
-    <button type="submit">Login</button>
+    <button type="submit">Register</button>
 </form>
 
-<a href="{{ url_for('register') }}">Register Here</a>
+<a href="{{ url_for('login') }}">Login Here</a>
 
 </body>
 </html>
