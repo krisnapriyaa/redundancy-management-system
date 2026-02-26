@@ -1,127 +1,149 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session
-import pymysql
+from flask import Flask, render_template, request, redirect, url_for, session
+import sqlite3
+import os
+import hashlib
 
 app = Flask(__name__)
-app.secret_key = "kp_super_secret_key"
+app.secret_key = "supersecretkey"
 
-connection = pymysql.connect(
-    host='localhost',
-    user='root',
-    password='Balram*5Krisna',
-    database='redundancy_db',
-    cursorclass=pymysql.cursors.DictCursor,
-    autocommit=True
-)
+# ---------- DATABASE SETUP ----------
+def get_db_connection():
+    conn = sqlite3.connect("database.db")
+    conn.row_factory = sqlite3.Row
+    return conn
 
-@app.route('/login')
-def login():
-    return render_template("login.html")
+def init_db():
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-@app.route('/login_user', methods=['POST'])
-def login_user():
-    username = request.form.get('username')
-    password = request.form.get('password')
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL
+        )
+    """)
 
-    if username == "admin" and password == "admin123":
-        session['user'] = username
-        return redirect(url_for('home'))
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT NOT NULL,
+            filehash TEXT UNIQUE NOT NULL
+        )
+    """)
 
-    return "Invalid Credentials"
+    conn.commit()
+    conn.close()
 
-@app.route('/logout')
-def logout():
-    session.pop('user', None)
-    return redirect(url_for('login'))
+init_db()
 
-@app.route('/')
+# ---------- PASSWORD HASH ----------
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+# ---------- ROUTES ----------
+
+@app.route("/")
 def home():
-    if 'user' not in session:
-        return redirect(url_for('login'))
     return render_template("index.html")
 
-@app.route('/add_user', methods=['POST'])
-def add_user():
-    if 'user' not in session:
-        return jsonify({"message": "Unauthorized"}), 401
 
-    data = request.get_json()
-    name = data.get('name')
-    email = data.get('email')
-    phone = data.get('phone')
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "POST":
+        username = request.form["username"]
+        password = hash_password(request.form["password"])
 
-    cursor = connection.cursor()
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM users WHERE email=%s", (email,))
-    existing = cursor.fetchone()
+        try:
+            cursor.execute(
+                "INSERT INTO users (username, password) VALUES (?, ?)",
+                (username, password)
+            )
+            conn.commit()
+            return redirect(url_for("login"))
+        except:
+            return "Username already exists!"
+        finally:
+            conn.close()
 
-    if existing:
-        return jsonify({"message": "Duplicate data detected!"}), 409
+    return render_template("register.html")
 
-    cursor.execute(
-        "INSERT INTO users (name, email, phone) VALUES (%s, %s, %s)",
-        (name, email, phone)
-    )
 
-    return jsonify({"message": "User added successfully!"}), 201
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form["username"]
+        password = hash_password(request.form["password"])
 
-@app.route('/get_users', methods=['GET'])
-def get_users():
-    if 'user' not in session:
-        return jsonify({"message": "Unauthorized"}), 401
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    cursor = connection.cursor()
-    cursor.execute("SELECT * FROM users")
-    users = cursor.fetchall()
-    return jsonify(users)
+        cursor.execute(
+            "SELECT * FROM users WHERE username=? AND password=?",
+            (username, password)
+        )
+        user = cursor.fetchone()
+        conn.close()
 
-@app.route('/search_user', methods=['GET'])
-def search_user():
-    if 'user' not in session:
-        return jsonify({"message": "Unauthorized"}), 401
+        if user:
+            session["user"] = username
+            return redirect(url_for("dashboard"))
+        else:
+            return "Invalid Credentials"
 
-    query = request.args.get('query', '')
+    return render_template("login.html")
 
-    cursor = connection.cursor()
-    cursor.execute(
-        "SELECT * FROM users WHERE name LIKE %s OR email LIKE %s",
-        (f"%{query}%", f"%{query}%")
-    )
 
-    users = cursor.fetchall()
-    return jsonify(users)
+@app.route("/dashboard")
+def dashboard():
+    if "user" not in session:
+        return redirect(url_for("login"))
 
-@app.route('/delete_user/<int:user_id>', methods=['DELETE'])
-def delete_user(user_id):
-    if 'user' not in session:
-        return jsonify({"message": "Unauthorized"}), 401
+    conn = get_db_connection()
+    files = conn.execute("SELECT * FROM files").fetchall()
+    conn.close()
 
-    cursor = connection.cursor()
-    cursor.execute("DELETE FROM users WHERE id=%s", (user_id,))
+    return render_template("dashboard.html", files=files)
 
-    if cursor.rowcount == 0:
-        return jsonify({"message": "User not found"}), 404
 
-    return jsonify({"message": "User deleted successfully!"}), 200
+@app.route("/upload", methods=["POST"])
+def upload():
+    if "user" not in session:
+        return redirect(url_for("login"))
 
-@app.route('/update_user/<int:user_id>', methods=['PUT'])
-def update_user(user_id):
-    if 'user' not in session:
-        return jsonify({"message": "Unauthorized"}), 401
+    file = request.files["file"]
 
-    data = request.get_json()
-    name = data.get('name')
-    phone = data.get('phone')
+    if file:
+        content = file.read()
+        filehash = hashlib.sha256(content).hexdigest()
 
-    cursor = connection.cursor()
-    cursor.execute(
-        "UPDATE users SET name=%s, phone=%s WHERE id=%s",
-        (name, phone, user_id)
-    )
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    if cursor.rowcount == 0:
-        return jsonify({"message": "User not found"}), 404
+        try:
+            cursor.execute(
+                "INSERT INTO files (filename, filehash) VALUES (?, ?)",
+                (file.filename, filehash)
+            )
+            conn.commit()
+            message = "File uploaded successfully!"
+        except:
+            message = "Duplicate file detected! Not stored."
 
-    return jsonify({"message": "User updated successfully!"}), 200
+        conn.close()
+        return message
+
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/logout")
+def logout():
+    session.pop("user", None)
+    return redirect(url_for("home"))
+
 
 if __name__ == "__main__":
-    app.run()
+    app.run(debug=True)
