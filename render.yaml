@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: cloud-redundancy-system
+    env: python
+    buildCommand: ""
+    startCommand: gunicorn app:app

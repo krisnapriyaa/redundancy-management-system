@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cloud Data Redundancy Removal System</title>
+</head>
+<body>
+
+    <h1>Cloud Data Redundancy Removal System</h1>
+    <a href="/logout">Logout</a>
+
+    <h2>Add User</h2>
+
+    <input type="text" id="name" placeholder="Name">
+    <input type="email" id="email" placeholder="Email">
+    <input type="text" id="phone" placeholder="Phone">
+    <button onclick="addUser()">Add User</button>
+
+    <h2>Search User</h2>
+    <input type="text" id="searchQuery" placeholder="Search by name or email">
+    <button onclick="searchUser()">Search</button>
+
+    <h2>All Users</h2>
+    <button onclick="loadUsers()">Load Users</button>
+
+    <ul id="userList"></ul>
+
+<script>
+function addUser() {
+    fetch('/add_user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            name: document.getElementById('name').value,
+            email: document.getElementById('email').value,
+            phone: document.getElementById('phone').value
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message);
+        loadUsers();
+    });
+}
+
+function loadUsers() {
+    fetch('/get_users')
+    .then(response => response.json())
+    .then(data => {
+        let list = document.getElementById('userList');
+        list.innerHTML = '';
+
+        data.forEach(user => {
+            let li = document.createElement('li');
+            li.innerHTML = `
+                ${user.name} - ${user.email} - ${user.phone}
+                <button onclick="deleteUser(${user.id})">Delete</button>
+            `;
+            list.appendChild(li);
+        });
+    });
+}
+
+function searchUser() {
+    let query = document.getElementById('searchQuery').value;
+
+    fetch(`/search_user?query=${query}`)
+    .then(response => response.json())
+    .then(data => {
+        let list = document.getElementById('userList');
+        list.innerHTML = '';
+
+        data.forEach(user => {
+            let li = document.createElement('li');
+            li.innerHTML = `
+                ${user.name} - ${user.email} - ${user.phone}
+                <button onclick="deleteUser(${user.id})">Delete</button>
+            `;
+            list.appendChild(li);
+        });
+    });
+}
+
+function deleteUser(id) {
+    fetch(`/delete_user/${id}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message);
+        loadUsers();
+    });
+}
+</script>
+
+</body>
+</html>
